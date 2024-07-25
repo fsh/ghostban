@@ -57,6 +57,7 @@ export {canMove, execCapture};
 import sha256 from 'crypto-js/sha256';
 
 type Strategy = 'post' | 'pre' | 'both';
+type TNode = TreeModel.Node<SgfNode>;
 
 export const calcDoubtfulMovesThresholdRange = (threshold: number) => {
   // 8D-9D
@@ -797,6 +798,38 @@ export const buildMoveNode = (
   });
   return node;
 };
+
+/**
+ * Gets the child corresponding to a given move (as SGF string), or creates one (and attaches it to
+ * the tree) if it does not exist.
+ *
+ * More convenient alternative to `buildMoveNode(move, parent, props)`.
+ *
+ */
+export const getOrCreateMoveChild = (
+  node: TreeModel.Node<SgfNode>,
+  move: string,
+  props?: SgfNodeOptions
+) => {
+  const moveProp = MoveProp.from(move);
+  const sha = calcSHA(node, [moveProp]);
+  let child = node.children.find((n: TNode) => n.model.id === sha);
+  if (child !== undefined) {
+    // Move found.
+    return child;
+  }
+  const tree: TreeModel = new TreeModel();
+  let number = getNodeNumber(node) + 1;
+  const nodeData = initNodeData(sha, number);
+  nodeData.moveProps = [moveProp];
+  child = tree.parse({
+    ...initNodeData(sha, number),
+    moveProps: [moveProp],
+    ...props,
+  });
+  node.addChild(child);
+  return child;
+}
 
 export const getLastIndex = (root: TreeModel.Node<SgfNode>) => {
   let lastNode = root;
@@ -1634,14 +1667,62 @@ export const getFirstToMoveColorFromRoot = (root: TreeModel.Node<SgfNode>) => {
   return Ki.Empty;
 };
 
-export const getMoveColor = (node: TreeModel.Node<SgfNode>) => {
-  const moveProp = node.model?.moveProps?.[0];
-  switch (moveProp?.token) {
-    case 'W':
-      return Ki.White;
-    case 'B':
-      return Ki.Black;
-    default:
-      return Ki.Empty;
+/**
+ * Tests if a SGF color string contains 'B' or 'W'.
+ *
+ * We leniently just use 'includes()' so we can pass strings that have whitespace or strings
+ * resulting from concatenating several tokens.
+ */
+function sgfColorToKi(s: string): Ki {
+  if (!s) { return Ki.Empty; }
+  if (s.includes('B')) { return Ki.Black; }
+  if (s.includes('W')) { return Ki.White; }
+  return Ki.Empty;
+}
+
+function concatMovePropTokens(node: TNode): string {
+  return node.model.moveProps?.map((m: MoveProp) => m.token).join('');
+}
+
+/**
+ * Get the player/color who last made a move.
+ */
+export function getMoveColor(node: TreeModel.Node<SgfNode>): Ki {
+  return sgfColorToKi(concatMovePropTokens(node));
+}
+
+/**
+ * Get the player/color whose move it is.
+ *
+ * This is often the same as `-getMoveColor(node)` but not always (PL[], handicap, setup root,
+ * etc.).
+ */
+export function getPlayerToMove(node: TNode): Ki {
+  let ki = Ki.Empty;
+
+  // 0. First of all, if the node has a PL[] property, then respect that.
+  const pl = node.model.setupProps?.filter((p: SetupProp) => p.token == 'PL');
+  if (pl.length > 0) {
+    ki = sgfColorToKi(pl[0].value);
+    if (ki !== Ki.Empty) { return ki; }
+    console.log("warning: invalid PL[]?", pl);
   }
-};
+
+  // To be super precise, we'd have to check handicap and game root's ruleset at this point... (E.g.
+  // if the SGF is of a game with free handicap placement, Black might validly move several times in
+  // a row.) But we'll just use simpler heuristics.
+
+  // 1. Try to conform with the tree: match the player in child nodes.
+  ki = sgfColorToKi(
+    node.children.map((c: TNode) => concatMovePropTokens(c)).join('')
+  );
+  if (ki !== Ki.Empty) { return ki; }
+
+  // 2. If this is a move node, return the opposite player.
+  ki = getMoveColor(node);
+  if (ki !== Ki.Empty) { return -ki; }
+
+  // 3. If all else fails, default to Black. (We ignore handicap properties.)
+  return Ki.Black;
+}
+

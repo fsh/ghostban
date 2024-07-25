@@ -1,15 +1,10 @@
 $(function() {
 
-  let GB = window.ghostban;
-  const {
-    GhostBan, Sgf, Ki, SGF_LETTERS,
-    canMove, MoveProp, calcSHA, genMove,
-    buildMoveNode, calcMatAndMarkup, Theme,
-    Cursor
-  } = GB;
-
-
   let examples = [
+    `
+(;FF[4]GM[1]CA[UTF-8]AP[goproblems:0.1.0]SZ[19]ST[0]AB[sd][qd][pc][pa]CR[qb]SQ[rb]MA[rc]TR[qc](;W[rb](;B[sb](;W[ra])(;W[sa];B[ra]))(;B[rc])(;B[qb])(;B[ra]))(;W[qb];B[rb]CR[rc]MA[ra]TR[sb](;W[ra])(;W[sb];B[rc]C[RIGHT])(;W[rc]C[RIGHT]))(;W[rc]CR[oa]MA[ob](;B[rb])(;B[qb])(;B[sb])(;B[qa]C[CHOICEFORCE];W[rd](;B[re])(;B[qb])(;B[rb])(;B[sb]))(;B[ra];W[rd](;B[re]C[CHOICE])(;B[qb])(;B[sb]))(;B[sa](;W[rd]C[NOTTHIS];B[re])(;W[ra];B[rb]C[CHOICE])))(;W[qc](;B[rc]C[CHOICE];W[qb])(;B[qb]C[CHOICE];W[rc]C[RIGHT])))
+`,
+
     `(;AW[hh]AW[lh]AW[hi]AW[ji]AW[li]AW[lj]AB[kg]AB[lg]AB[mg]AB[mh]AB[mi]AB[mj]AB[kk]AB[lk]AB[mk]C[Black to play and catch the three (ddfsdfsdf)) stones.]SZ[19]GM[1]FF[4]CA[UTF-8]AP[CGoban:2]ST[2]RU[Japanese]KM[0.00]TM[]DT[1999-07-28]SY[Cgoban 1.9.2] (;B[ki] (;W[kh] (;B[jh];W[kj];B[jj];W[ki];B[ii]C[CHOICERIGHT]) (;B[kj];W[jh])) (;W[kj] (;B[kh];W[jj]) (;B[jj];W[kh];B[jh]))) (;B[jh];W[jj]) (;B[jj];W[jh]) (;B[ii];W[jj]))`,
     `(;AW[pe]AW[pf]AW[qg]AW[qh]AW[oi]AW[ri]AW[oj]AW[pj]AW[rj]AW[sk]AW[rl]AW[sl]AW[rm]AB[pg]AB[ph]AB[rh]AB[pi]AB[qi]AB[qj]AB[pk]AB[qk]AB[rk]AB[pl]C[black to do something effective (on) the side]SZ[19]GM[1]FF[3]RU[Japanese]HA[0]KM[5.5]PW[White]PB[Black]GN[White (W) vs. Black (B)]DT[1999-07-27]SY[Cgoban 1.9.2]TM[30:00(5x1:00)] (;B[sh] (;W[sj] (;B[qf];W[rg];B[rf]C[RIGHT]) (;B[rg];W[qf])) (;W[rg];B[sj];W[si];B[sj]C[snapbackRIGHT])) (;B[sj];W[si] (;B[sh];W[sj] (;B[qf];W[rg]) (;B[rg];W[qf])) (;B[qf];W[rg]) (;B[rg];W[qf])) (;B[rg];W[qf]C[black has nothing now]) (;B[qf];W[rg] (;B[sh];W[sg]) (;B[rf];W[sh])) (;B[sj]) (;B[qn];W[rg]) (;B[qm];W[rg]) (;B[rn];W[rg]) (;B[rf];W[rg]) (;B[sg];W[rg]))`,
     `(;GM[1]FF[4]CA[UTF-8]AP[Sabaki:0.52.0]KM[6.5]SZ[19]DT[2022-11-10]AE[cq][dp]AB[cp][bo][bq][ap][dq][ep][fp][go][ho][hp][hq]AW[gp][gq][fq][fo][gm][el][cl][co][bn][hr][ir][iq]TR[fo](;B[fn];W[eo](;B[dn](;W[do]C[CHOICE](;B[cn];W[en];B[em]C[RIGHT])(;B[en];W[cn]))(;W[en]C[CHOICE](;B[em];W[do];B[cn]C[RIGHT\r\n])(;B[do];W[em])))(;B[en];W[do](;B[dn];W[cn])(;B[cn];W[dn]))(;B[cn];W[en]))(;B[en];W[fn])(;B[eo];W[fn])(;B[fm];W[en](;B[em];W[dn])(;B[fn];W[eo])(;B[eo];W[fn]))(;B[em];W[fn])(;B[dn];W[fn])(;B[do];W[fn])(;B[gn];W[fn])(;B[dm];W[fn])(;B[cn];W[fn]C[aaaaa:)]))`,
@@ -427,6 +422,18 @@ PW[White]PB[Black]
     `(;FF[4]GM[1]CA[UTF-8]AP[goproblems:0.1.0]SZ[19]ST[0]AB[pd][oa][na][ma][la][ka][ia][ja][ha][fa][eb])`
   ];
 
+  let GB = window.ghostban;
+  const {
+    GhostBan, Sgf, Ki,
+    canMove, genMove,
+    getPlayerToMove,
+    getOrCreateMoveChild,
+    posToSgf,
+    calcMatAndMarkup, Theme,
+    Cursor
+  } = GB;
+
+  // Drop down list of `examples`.
   let sbox = $('<select>');
   for (idx in examples) {
     $(`<option>${idx}</option>`).appendTo(sbox);
@@ -437,15 +444,14 @@ PW[White]PB[Black]
   });
   sbox.prependTo('body');
 
-
   function setSgf(c) {
     let sgf = new Sgf(c)
     let root = sgf.root;
+    window.root = root;
     let currentNode = root;
-    // while (currentNode && currentNode.hasChildren()) {
-    //   currentNode = currentNode.children[0];
-    // }
-    let turn = Ki.Black;
+
+    console.log("node:", currentNode);
+    console.log("player to move:", getPlayerToMove(currentNode));
 
     let { mat, markup } = calcMatAndMarkup(currentNode, 15)
     let g = new GhostBan({
@@ -460,6 +466,7 @@ PW[White]PB[Black]
       // zoom: false,
       extent: 3,
     });
+    window.g = g;
     // markup[0][0] = "sq";
     // markup[0][1] = "sq";
     // markup[0][2] = "ci";
@@ -485,8 +492,11 @@ PW[White]PB[Black]
     // g.setCursor(Cursor.Text, "B")
     // g.setCursor(Cursor.BlackStone)
     // g.setBoardSize(9);
-    g.setCursor(Cursor.BlackStone);
-    g.setTurn(Ki.Black)
+
+    const ki = getPlayerToMove(currentNode);
+    g.setCursor(ki === Ki.Black ? Cursor.BlackStone : Cursor.WhiteStone);
+    g.setTurn(ki);
+
     // g.calcBoardVisibleArea(true);
     g.setTheme(Theme.Flat)
     g.render();
@@ -496,28 +506,20 @@ PW[White]PB[Black]
     dom.onclick = () => {
       i = g.cursorPosition[0];
       j = g.cursorPosition[1];
-      const value = SGF_LETTERS[i] + SGF_LETTERS[j];
-      let turn = Ki.Black;
-      if (canMove(mat, i, j, turn)) {
-        g.setTurn(-turn)
-        const token = turn === Ki.Black ? 'B' : 'W';
-        if (turn !== 0) {
-          const sha = calcSHA(currentNode, [
-            MoveProp.from(`${token}[${value}]`),
-          ]);
-          const filtered = currentNode.children.filter(
-            (n) => n.model.id === sha
-          );
-          let node;
-          if (filtered.length > 0) {
-            node = filtered[0];
-          } else {
-            node = buildMoveNode(`${token}[${value}]`, currentNode);
-            currentNode.addChild(node);
-          }
-          currentNode = node
-        }
+
+      console.log('current:', currentNode, currentNode.model.id);
+
+      const turn = getPlayerToMove(currentNode);
+      if (!canMove(mat, i, j, turn)) {
+        console.log('warning: invalid move?', i, j, turn);
+        // Invalid move. Do nothing.
+        return;
       }
+
+      const movestr = posToSgf(i, j, turn);
+      currentNode = getOrCreateMoveChild(currentNode, movestr);
+
+      console.log('after move:', currentNode, currentNode.model.id);
 
       let res = calcMatAndMarkup(currentNode)
       g.setMat(res.mat);
@@ -529,17 +531,24 @@ PW[White]PB[Black]
       let nextNode = genMove(currentNode,
         (path) => { console.log('right', path); },
         (path) => { console.log('wrong', path); },
-        (path) => { console.log('variant', path); });
-      // console.log(nextNode);
+        (path) => { console.log('variant', path); },
+        (path) => { console.log('offpath', path); }
+      );
+
       if (nextNode) {
         currentNode = nextNode;
-        console.log('next', currentNode)
-        console.log('next', currentNode.model.id)
+        console.log('response:', currentNode, currentNode.model.id);
+
+        const ki = getPlayerToMove(currentNode);
+        g.setCursor(ki === Ki.Black ? Cursor.BlackStone : Cursor.WhiteStone);
+        g.setTurn(ki);
+
         let res = GB.calcMatAndMarkup(currentNode);
         g.setMat(res.mat);
         g.setMarkup(res.markup);
         g.render();
         g.renderInteractive();
+
       }
     }
   }

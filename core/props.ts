@@ -9,8 +9,7 @@ export const SETUP_PROP_LIST = [
   'AB',
   'AE',
   'AW',
-  //TODO: PL is a value of color type
-  // 'PL'
+  'PL', // XXX (fsh): setup props are all assumed to be of list type?
 ];
 export const NODE_ANNOTATION_PROP_LIST = [
   'A',
