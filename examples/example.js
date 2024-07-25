@@ -429,6 +429,7 @@ PW[White]PB[Black]
     getPlayerToMove,
     getOrCreateMoveChild,
     posToSgf,
+    calcPreventMoveMat,
     calcMatAndMarkup, Theme,
     Cursor
   } = GB;
@@ -485,13 +486,7 @@ PW[White]PB[Black]
     // g.setBoardSize(9);
     g.setMat(mat);
     g.setMarkup(markup);
-    // g.setCursor(Cursor.Circle)
-    // g.setCursor(Cursor.Square)
-    // g.setCursor(Cursor.Cross)
-    // g.setCursor(Cursor.Triangle)
-    // g.setCursor(Cursor.Text, "B")
-    // g.setCursor(Cursor.BlackStone)
-    // g.setBoardSize(9);
+    g.setPreventMoveMat(calcPreventMoveMat(currentNode));
 
     const ki = getPlayerToMove(currentNode);
     g.setCursor(ki === Ki.Black ? Cursor.BlackStone : Cursor.WhiteStone);
@@ -508,6 +503,7 @@ PW[White]PB[Black]
       j = g.cursorPosition[1];
 
       console.log('current:', currentNode, currentNode.model.id);
+
 
       const turn = getPlayerToMove(currentNode);
       if (!canMove(mat, i, j, turn)) {
@@ -546,6 +542,8 @@ PW[White]PB[Black]
         let res = GB.calcMatAndMarkup(currentNode);
         g.setMat(res.mat);
         g.setMarkup(res.markup);
+        g.setPreventMoveMat(calcPreventMoveMat(currentNode));
+
         g.render();
         g.renderInteractive();
 

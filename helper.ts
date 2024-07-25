@@ -196,10 +196,15 @@ function nodeComment(node: TNode): string {
 }
 
 
-export const isChoiceNode = (n: TreeModel.Node<SgfNode>) => nodeComment(n).includes('CHOICE');
+export const isChoiceNode = (n: TNode) => nodeComment(n).includes('CHOICE');
 
 // XXX fsh: is this dead code?
 export const isTargetNode = isChoiceNode;
+
+export const isForceNode = (n: TNode) => nodeComment(n).includes('FORCE');
+export const isPreventMoveNode = (n: TNode) => nodeComment(n).includes('NOTTHIS');
+export const isRightNode = (n: TNode) => nodeComment(n).includes('RIGHT');
+
 
 
 /**
@@ -249,39 +254,6 @@ function isValidResponse(node: TNode): boolean {
   return isLocalChoice(node);
 }
 
-
-export const isForceNode = (n: TreeModel.Node<SgfNode>) => {
-  const c = n.model.nodeAnnotationProps?.find(
-    (p: NodeAnnotationProp) => p.token === 'C'
-  );
-  return c?.value.includes('FORCE');
-};
-
-export const isPreventMoveNode = (n: TreeModel.Node<SgfNode>) => {
-  const c = n.model.nodeAnnotationProps?.find(
-    (p: NodeAnnotationProp) => p.token === 'C'
-  );
-  return c?.value.includes('NOTTHIS');
-};
-
-// export const isRightLeaf = (n: TreeModel.Node<SgfNode>) => {
-//   return isRightNode(n) && !n.hasChildren();
-// };
-
-export const isRightNode = (n: TreeModel.Node<SgfNode>) => {
-  const c = n.model.nodeAnnotationProps?.find(
-    (p: NodeAnnotationProp) => p.token === 'C'
-  );
-  return c?.value.includes('RIGHT');
-};
-
-// export const isFirstRightLeaf = (n: TreeModel.Node<SgfNode>) => {
-//   const root = n.getPath()[0];
-//   const firstRightLeave = root.first((n: TreeModel.Node<SgfNode>) =>
-//     isRightLeaf(n)
-//   );
-//   return firstRightLeave?.model.id === n.model.id;
-// };
 
 export const isFirstRightNode = (n: TreeModel.Node<SgfNode>) => {
   const root = n.getPath()[0];
@@ -915,11 +887,13 @@ export const cutMoveNodes = (
   return node;
 };
 
-export const zeros = (size: [number, number]): number[][] =>
-  new Array(size[0]).fill(0).map(() => new Array(size[1]).fill(0));
+function newMatrix<T>(size: [number, number], value: T): T[][] {
+  return new Array(size[0]).fill(null).map(() => new Array(size[1]).fill(value));
+}
 
-export const empty = (size: [number, number]): string[][] =>
-  new Array(size[0]).fill('').map(() => new Array(size[1]).fill(''));
+export const zeros = (size: [number, number]): number[][] => newMatrix(size, 0);
+
+export const empty = (size: [number, number]): string[][] => newMatrix(size, '');
 
 export const calcMost = (mat: number[][], boardSize = 19) => {
   let leftMost: number = boardSize - 1;
@@ -1309,37 +1283,25 @@ export const calcPreventMoveMat = (
 ) => {
   if (!node) return zeros([defaultBoardSize, defaultBoardSize]);
   const size = extractBoardSize(node, defaultBoardSize);
-  const preventMoveMat = zeros([size, size]);
-  let forceNodes = [];
-  let preventMoveNodes = [];
-  if (node.hasChildren()) {
-    preventMoveNodes = node.children.filter((n: TreeModel.Node<SgfNode>) =>
-      isPreventMoveNode(n)
-    );
-  }
 
-  if (isForceNode(node)) {
-    preventMoveMat.forEach(row => row.fill(1));
-    if (node.hasChildren()) {
-      node.children.forEach((n: TreeModel.Node<SgfNode>) => {
-        n.model.moveProps.forEach((m: MoveProp) => {
-          const i = SGF_LETTERS.indexOf(m.value[0]);
-          const j = SGF_LETTERS.indexOf(m.value[1]);
-          if (i >= 0 && j >= 0 && i < size && j < size) {
-            preventMoveMat[i][j] = 0;
-          }
-        });
-      });
-    }
+  // If this is a FORCE node we default to preventing all moves.
+  //
+  // Otherwise we only prevent NOTTHIS children.
 
-    preventMoveNodes.forEach((n: TreeModel.Node<SgfNode>) => {
-      n.model.moveProps.forEach((m: MoveProp) => {
+  const forced = isForceNode(node);
+  const preventMoveMat = newMatrix([size, size], forced ? 1 : 0);
+
+  for (const c of node.children) {
+    const avoid = isPreventMoveNode(c) ? 1 : 0;
+
+    c.model.moveProps.forEach((m: MoveProp) => {
+      if (m.token === 'B' || m.token === 'W') {
         const i = SGF_LETTERS.indexOf(m.value[0]);
         const j = SGF_LETTERS.indexOf(m.value[1]);
         if (i >= 0 && j >= 0 && i < size && j < size) {
-          preventMoveMat[i][j] = 1;
+          preventMoveMat[i][j] = avoid;
         }
-      });
+      }
     });
   }
 
