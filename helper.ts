@@ -51,7 +51,10 @@ export {canMove, execCapture};
 
 // es6 import style sometimes trigger error 'gg/ghostban/build/index.js" contains a reference to the file "crypto'
 // use require instead
-const sha256 = require('crypto-js/sha256');
+//
+// fsh: ^-- is this still valid?
+// const sha256 = require('crypto-js/sha256');
+import sha256 from 'crypto-js/sha256';
 
 type Strategy = 'post' | 'pre' | 'both';
 
