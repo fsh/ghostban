@@ -186,14 +186,69 @@ export const isAnswerNode = (n: TreeModel.Node<SgfNode>, kind: PAT) => {
   return pat?.value === kind;
 };
 
-export const isChoiceNode = (n: TreeModel.Node<SgfNode>) => {
-  const c = n.model.nodeAnnotationProps?.find(
+/**
+ * Returns the node's comment (or an empty string if there was no comment).
+ */
+function nodeComment(node: TNode): string {
+  return node.model.nodeAnnotationProps?.find(
     (p: NodeAnnotationProp) => p.token === 'C'
-  );
-  return c?.value.includes('CHOICE');
-};
+  )?.value || ''
+}
 
+
+export const isChoiceNode = (n: TreeModel.Node<SgfNode>) => nodeComment(n).includes('CHOICE');
+
+// XXX fsh: is this dead code?
 export const isTargetNode = isChoiceNode;
+
+
+/**
+ * Is this node a valid CHOICE/target with respect to its parent?
+ */
+function isLocalChoice(node: TNode): boolean {
+  if (node.isRoot()) {
+    return true;
+  }
+
+  // If any sibling node has CHOICE then this node also needs to have it.
+  const sibling_choice = node.parent.children.map(nodeComment).join(' ').includes('CHOICE');
+  if (sibling_choice && !isChoiceNode(node)) {
+    return false;
+  }
+
+  // Otherwise, the node needs to be the first branch in the SGF.
+  return node.getIndex() === 0;
+}
+
+// CHOICE can be deceptively contextual.
+//
+// To determine what nodes are reachable on goproblems.com
+// we have to consider both descendants and ancestors,
+// as well as the color of moves and path siblings...
+//
+// If we can assume that the history has been valid up to this point, we only need to check parent.
+// Otherwise, all ancestors with the same player to move need to be checked.
+//
+function isStrictlyValidResponse(node: TNode) {
+  if (node.first(isChoiceNode)) { return true; }
+
+  // We must ignore nodes that do not match the node's color. They are presumably played by an
+  // opponent who chooses freely (i.e. the human user).
+  const ki = getPlayerToMove(node);
+  const path = node.getPath().filter((n: TNode) => getPlayerToMove(n) === ki);
+
+  // Make sure all of these moves are valid w.r.t. SGF ordering and CHOICE.
+  return path.every(isLocalChoice);
+}
+
+/**
+ * Is this node a valid response that the app may choose?
+ */
+function isValidResponse(node: TNode): boolean {
+  if (node.first(isChoiceNode)) { return true; }
+  return isLocalChoice(node);
+}
+
 
 export const isForceNode = (n: TreeModel.Node<SgfNode>) => {
   const c = n.model.nodeAnnotationProps?.find(
@@ -1590,8 +1645,7 @@ export const genMove = (
   onWrong: (path: string) => void,
   onVariant: (path: string) => void,
   onOffPath: (path: string) => void
-): TreeModel.Node<SgfNode> => {
-  let nextNode;
+): null|TreeModel.Node<SgfNode> => {
   const getPath = (node: TreeModel.Node<SgfNode>) => {
     const newPath = compact(
       node.getPath().map(n => n.model.moveProps[0]?.toString())
@@ -1612,35 +1666,31 @@ export const genMove = (
     }
   };
 
-  if (node.hasChildren()) {
-    const rightNodes = node.children.filter((n: TreeModel.Node<SgfNode>) =>
-      inRightPath(n)
-    );
-    const wrongNodes = node.children.filter((n: TreeModel.Node<SgfNode>) =>
-      inWrongPath(n)
-    );
-    const variantNodes = node.children.filter((n: TreeModel.Node<SgfNode>) =>
-      inVariantPath(n)
-    );
-
-    nextNode = node;
-
-    if (inRightPath(node) && rightNodes.length > 0) {
-      nextNode = sample(rightNodes);
-    } else if (inWrongPath(node) && wrongNodes.length > 0) {
-      nextNode = sample(wrongNodes);
-    } else if (inVariantPath(variantNodes) && variantNodes.length > 0) {
-      nextNode = sample(variantNodes);
-    } else if (isRightNode(node)) {
-      onRight(getPath(nextNode));
-    } else {
-      onWrong(getPath(nextNode));
-    }
-    checkResult(nextNode);
-  } else {
+  if (!node.hasChildren()) {
+    // End of the line, just do callbacks based on this node?
     checkResult(node);
+    return null;
   }
-  return nextNode;
+
+  // Generate a response.
+  //
+  // It's my understanding that goproblems only cares about picking a node that is consistent with
+  // CHOICE at this point. This seems to be how the Eidogo app works.
+  //
+  // Problem where the right/wrong status differs between multiple CHOICE-valid paths could be
+  // said to be invalid.
+  //
+  const valid_children = node.children.filter(isValidResponse);
+  let chosen = null;
+  if (valid_children.length > 0) {
+    chosen = sample(valid_children);
+  } else {
+    // Something strange is going on. The problem is probably not validly constructed.
+    console.log("warning: found no valid children to choose from", node);
+    chosen = sample(node.children);
+  }
+  checkResult(chosen);
+  return chosen;
 };
 
 export const extractBoardSize = (
