@@ -482,7 +482,9 @@ export const pathToInitialStones = (
     .filter(n => n.model.setupProps.length > 0)
     .map(n => {
       return n.model.setupProps.map((setup: SetupProp) => {
-        return setup.values.map((v: string) => {
+        return setup.values.flatMap((v: string) => {
+          // Does not handle AE?
+          if (!['AB', 'AW'].includes(setup.token)) { return []; }
           const a = A1_LETTERS[SGF_LETTERS.indexOf(v[0]) + xOffset];
           const b = A1_NUMBERS[SGF_LETTERS.indexOf(v[1]) + yOffset];
           const token = setup.token === 'AB' ? 'B' : 'W';
@@ -1413,13 +1415,14 @@ export const calcMatAndMarkup = (
 
     setupProps.forEach((setup: any) => {
       setup.values.forEach((value: any) => {
-        const i = SGF_LETTERS.indexOf(value[0]);
-        const j = SGF_LETTERS.indexOf(value[1]);
-        li = i;
-        lj = j;
-        if (i < size && j < size) {
-          mat[i][j] = setup.token === 'AB' ? 1 : -1;
-          if (setup.token === 'AE') mat[i][j] = 0;
+        // -2 -1 0 1 => not found, white, empty, black
+        const ty = ['AW', 'AE', 'AB'].indexOf(setup.token) - 1;
+        if (ty >= -1) {
+          const i = SGF_LETTERS.indexOf(value[0]);
+          const j = SGF_LETTERS.indexOf(value[1]);
+          if (i >= 0 && j >= 0 && i < size && j < size) {
+            mat[i][j] = ty;
+          }
         }
       });
     });
@@ -1460,11 +1463,14 @@ export const calcMatAndMarkup = (
       if (setupProps.length > 0) setupCount += 1;
       setupProps.forEach((setup: any) => {
         setup.values.forEach((value: any) => {
-          const i = SGF_LETTERS.indexOf(value[0]);
-          const j = SGF_LETTERS.indexOf(value[1]);
-          if (i >= 0 && j >= 0 && i < size && j < size) {
-            visibleAreaMat[i][j] = Ki.Black;
-            if (setup.token === 'AE') visibleAreaMat[i][j] = 0;
+          // -2 -1 0 1 => not found, white, empty, black
+          const ty = ['AW', 'AE', 'AB'].indexOf(setup.token) - 1;
+          if (ty >= -1) {
+            const i = SGF_LETTERS.indexOf(value[0]);
+            const j = SGF_LETTERS.indexOf(value[1]);
+            if (i >= 0 && j >= 0 && i < size && j < size) {
+              mat[i][j] = ty;
+            }
           }
         });
       });
